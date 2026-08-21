@@ -1,0 +1,10 @@
+node_modules/
+uploads/*
+!uploads/.gitkeep
+*.log
+localprint-debug.log
+*.zip
+Sumatra*.exe
+SumatraPDF-settings.txt
+printed_output/
+.DS_Store

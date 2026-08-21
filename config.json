@@ -1,0 +1,11 @@
+{
+  "port": 3000,
+  "pin": {
+    "enabled": false,
+    "code": "1234"
+  },
+  "maxFileSizeMB": 20,
+  "autoDeleteMinutes": 10,
+  "allowedExtensions": [".pdf", ".jpg", ".jpeg", ".png", ".docx"],
+  "openHostOnStart": true
+}

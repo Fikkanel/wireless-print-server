@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LocalPrint — Wireless Printing via QR Code</title>
+  <meta name="description" content="Cetak dokumen dan foto pasfoto langsung dari HP ke printer via QR code tanpa install driver atau aplikasi tambahan.">
+  <link rel="stylesheet" href="styles.css">
+  <!-- PDF.js CDN for PDF Page Preview -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Navbar -->
+    <nav class="navbar">
+      <a href="#" class="brand">
+        <div class="brand-icon">🖨️</div>
+        <span class="brand-title">LocalPrint</span>
+      </a>
+
+      <div class="nav-badges">
+        <div class="badge badge-online">
+          <span class="dot"></span>
+          <span id="navStatusText">Server Siap</span>
+        </div>
+        <div class="badge badge-ip" id="navIpAddress">192.168.1.X:3000</div>
+        
+        <div class="view-tabs">
+          <button type="button" class="tab-btn active" id="tabMobileBtn" onclick="switchView('mobile')">📱 Mobile Client</button>
+          <button type="button" class="tab-btn" id="tabHostBtn" onclick="switchView('host')">💻 Host Dashboard</button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- ==================== 💻 LAPTOP HOST DASHBOARD VIEW ==================== -->
+    <main id="hostView" class="host-layout" style="display: none;">
+      <!-- Left Column: QR & Server Config -->
+      <section class="glass-card qr-hero">
+        <h2 style="font-family: var(--font-heading); font-size: 1.3rem;">Scan QR untuk Print</h2>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Arahkan kamera HP ke QR Code di bawah untuk membuka halaman print.</p>
+        
+        <div class="qr-box">
+          <img id="qrImage" src="" alt="Scan QR Code to Print" class="qr-image">
+        </div>
+
+        <div style="font-size: 0.8rem; color: var(--text-dim);">Atau buka URL di browser HP:</div>
+        <div class="url-box" id="hostServerUrl">http://192.168.1.3:3000/</div>
+
+        <!-- Controls (Hidden on Mobile) -->
+        <div class="setting-row mobile-hide">
+          <label for="printerSelect">🖨️ Printer Target Aktif:</label>
+          <select id="printerSelect" class="select-custom" onchange="updateHostSettings()">
+            <option value="Virtual Mock Printer (LocalPrint Test)">Virtual Mock Printer (LocalPrint Test)</option>
+          </select>
+        </div>
+
+        <div class="setting-row mobile-hide" style="margin-top: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label for="pinProtectionToggle">🔐 Proteksi Kode PIN:</label>
+            <input type="checkbox" id="pinProtectionToggle" onchange="togglePinProtection()">
+          </div>
+          <div id="pinInputWrapper" style="display: none; margin-top: 0.5rem;">
+            <input type="text" id="hostPinCode" class="input-custom" value="1234" placeholder="Masukan 4 digit PIN" onchange="updateHostSettings()">
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Print Job Monitor Queue (Hidden on Mobile) -->
+      <section class="glass-card mobile-hide">
+        <div class="section-title">
+          <span>📋 Riwayat & Antrian Print Job</span>
+          <span style="font-size: 0.85rem; color: var(--text-muted);" id="jobCountText">0 Job</span>
+        </div>
+
+        <div class="job-table-container">
+          <table class="job-table">
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Pengirim</th>
+                <th>Dokumen</th>
+                <th>Opsi</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="jobTableBody">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada job masuk. Scan QR di samping dari HP untuk mencoba.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- ==================== 📱 MOBILE CLIENT VIEW ==================== -->
+    <main id="mobileView" class="mobile-wrapper">
+      <section class="glass-card">
+        <div style="text-align: center; margin-bottom: 1.25rem;">
+          <h1 style="font-family: var(--font-heading); font-size: 1.4rem;">Print Dokumen / Foto</h1>
+          <p style="color: var(--text-muted); font-size: 0.825rem;">Terhubung ke <strong id="mobileConnectedPrinter" style="color: var(--accent-cyan);">Printer Server</strong></p>
+        </div>
+
+        <!-- Step 1: Upload Dropzone -->
+        <div id="uploadStep">
+          <div class="upload-dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+            <div class="dropzone-icon">🖼️</div>
+            <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem;">Pilih Dokumen / Foto</h3>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 1rem;">Format PDF, Gambar (JPG/PNG), atau DOCX (Max 20MB)</p>
+            
+            <div style="display: flex; gap: 0.5rem; justify-content: center;">
+              <button type="button" class="btn-primary" style="width: auto; padding: 0.6rem 1.25rem;">📁 Pilih Dari HP</button>
+            </div>
+          </div>
+          <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.docx" style="display: none;" onchange="handleFileSelect(event)">
+        </div>
+
+        <!-- Step 2: Document Selected Preview & Options Form -->
+        <form id="printForm" style="display: none;" onsubmit="submitPrintJob(event)">
+          
+          <!-- Visual Document & Image Preview Card -->
+          <div class="visual-preview-box" id="visualPreviewBox">
+            <div class="visual-preview-header">
+              <div class="file-info">
+                <div class="file-name" id="previewFilename">document.pdf</div>
+                <div class="file-meta" id="previewFileMeta">0 KB • Dokumen</div>
+              </div>
+              <button type="button" onclick="resetFileSelection()" class="btn-remove-file" title="Ganti File">✕</button>
+            </div>
+
+            <!-- Visual Canvas / Thumbnail Frame -->
+            <div class="preview-frame" id="previewFrame">
+              <canvas id="pdfCanvasPreview" class="pdf-canvas-preview" style="display: none;"></canvas>
+              <img id="imgThumbnailPreview" class="img-thumbnail-preview" src="" alt="Preview" style="display: none;">
+              <div id="docxPreviewPlaceholder" class="docx-preview-placeholder" style="display: none;">
+                <div style="font-size: 2.8rem; color: #6366f1;">📝</div>
+                <div style="font-weight: 600; font-size: 0.9rem; margin-top: 0.25rem;">Dokumen Word (.docx)</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">Siap dikonversi & dicetak</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mode Selector (Only visible for Images) -->
+          <div id="imageModeSelector" style="display: none; margin-top: 1rem;">
+            <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600; margin-bottom: 0.3rem; display: block;">Mode Pencetakan Gambar:</label>
+            <div class="segmented-control">
+              <button type="button" class="segmented-btn active" id="modeStandardBtn" onclick="setPrintMode('standard')">📄 Gambar Standar</button>
+              <button type="button" class="segmented-btn" id="modePhotoBtn" onclick="setPrintMode('photo')">📸 Cetak Pasfoto / Grid</button>
+            </div>
+          </div>
+
+          <!-- Interactive Photo Studio Container (Crop & Pan) -->
+          <div id="photoStudioSection" style="display: none; margin-top: 1.25rem;">
+            
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label style="font-size: 0.85rem; color: var(--accent-cyan); font-weight: 700;">🎯 Atur Posisi & Crop Foto:</label>
+              <button type="button" onclick="resetCropPosition()" style="background: transparent; border: none; color: var(--text-muted); font-size: 0.75rem; cursor: pointer; text-decoration: underline;">🔄 Reset Posisi</button>
+            </div>
+
+            <!-- Canvas Crop Box -->
+            <div class="photo-crop-container" id="cropContainer">
+              <canvas id="cropCanvas" class="photo-crop-canvas"></canvas>
+              <div class="crop-instruction-tag">👈 Geser foto (atas/bawah/kanan/kiri) & zoom 👉</div>
+            </div>
+
+            <!-- Zoom & Scale Controls -->
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem;">
+              <span style="font-size: 0.75rem; color: var(--text-muted);">🔍 Zoom:</span>
+              <input type="range" id="zoomRange" min="0.5" max="3.0" step="0.05" value="1.0" class="select-custom" style="padding: 0; height: 8px;" oninput="onZoomChange(event)">
+            </div>
+
+            <!-- Photo Size Ratio & Grid Count Options -->
+            <div class="options-grid" style="margin-top: 1rem;">
+              
+              <!-- Aspect Ratio Size -->
+              <div>
+                <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Ukuran Foto / Pasfoto:</label>
+                <select id="photoSizeSelect" class="select-custom" style="margin-top: 0.3rem;" onchange="onPhotoOptionChange()">
+                  <option value="3x4" selected>Pasfoto 3 x 4 cm</option>
+                  <option value="2x3">Pasfoto 2 x 3 cm</option>
+                  <option value="4x6">Pasfoto 4 x 6 cm</option>
+                  <option value="1:1">Square 1 : 1</option>
+                  <option value="4:3">Landscape 4 : 3</option>
+                  <option value="full">Full Fit (1 Foto)</option>
+                </select>
+              </div>
+
+              <!-- Photos Per Sheet Count -->
+              <div>
+                <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Jumlah Foto / Lembar A4:</label>
+                <select id="photoCountSelect" class="select-custom" style="margin-top: 0.3rem;" onchange="onPhotoOptionChange()">
+                  <option value="auto" selected>Otomatis Maksimal (Penuh A4)</option>
+                  <option value="1">1 Foto (Di tengah)</option>
+                  <option value="2">2 Foto</option>
+                  <option value="4">4 Foto (Grid 2x2)</option>
+                  <option value="6">6 Foto (Grid 2x3)</option>
+                  <option value="8">8 Foto (Grid 2x4)</option>
+                  <option value="9">9 Foto (Grid 3x3)</option>
+                  <option value="12">12 Foto (Penuh A4)</option>
+                </select>
+              </div>
+
+            </div>
+
+            <!-- Sheet Layout Preview -->
+            <div style="margin-top: 0.75rem;">
+              <label style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">📄 Preview Hasil Tata Letak Kertas A4:</label>
+              <div class="sheet-preview-container">
+                <canvas id="sheetCanvas" class="sheet-preview-canvas" width="300" height="424"></canvas>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Options Grid -->
+          <div class="options-grid">
+            
+            <!-- Sender Name -->
+            <div class="full-width">
+              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Nama Pengirim:</label>
+              <input type="text" id="senderName" class="input-custom" placeholder="Contoh: HP Budi / Ruang Tamu" required style="margin-top: 0.3rem;">
+            </div>
+
+            <!-- Copies -->
+            <div>
+              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Jumlah Lembar Cetak:</label>
+              <div class="stepper" style="margin-top: 0.3rem;">
+                <button type="button" class="stepper-btn" onclick="adjustCopies(-1)">-</button>
+                <span class="stepper-value" id="copiesVal">1</span>
+                <button type="button" class="stepper-btn" onclick="adjustCopies(1)">+</button>
+              </div>
+            </div>
+
+            <!-- Paper Size -->
+            <div>
+              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Ukuran Kertas:</label>
+              <select id="paperSize" class="select-custom" style="margin-top: 0.3rem;">
+                <option value="A4" selected>A4</option>
+                <option value="Letter">Letter</option>
+                <option value="F4">F4 / Folio</option>
+                <option value="Legal">Legal</option>
+              </select>
+            </div>
+
+            <!-- Color Mode -->
+            <div class="full-width">
+              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600; margin-bottom: 0.3rem; display: block;">Warna:</label>
+              <div class="segmented-control">
+                <button type="button" class="segmented-btn active" id="colorModeColor" onclick="setColorMode('color')">🎨 Berwarna</button>
+                <button type="button" class="segmented-btn" id="colorModeGray" onclick="setColorMode('grayscale')">🏁 Hitam-Putih</button>
+              </div>
+            </div>
+
+            <!-- Orientation -->
+            <div class="full-width" id="orientationWrapper">
+              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600; margin-bottom: 0.3rem; display: block;">Orientasi Kertas:</label>
+              <div class="segmented-control">
+                <button type="button" class="segmented-btn active" id="orientPortrait" onclick="setOrientation('portrait')">📄 Potrait</button>
+                <button type="button" class="segmented-btn" id="orientLandscape" onclick="setOrientation('landscape')">📜 Landscape</button>
+              </div>
+            </div>
+
+            <!-- Page Range (Hide in Photo Studio Mode) -->
+            <div class="full-width" id="pageRangeWrapper">
+              <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Rentang Halaman:</label>
+              <select id="pageRangeMode" class="select-custom" style="margin-top: 0.3rem;" onchange="onPageRangeModeChange()">
+                <option value="all" selected>All Pages</option>
+                <option value="current">Only This Page</option>
+                <option value="custom">Custom Page</option>
+              </select>
+              <div id="customPageInputWrapper" style="display: none; margin-top: 0.5rem;">
+                <input type="text" id="customPageRange" class="input-custom" placeholder="Contoh: 1-4, 3" value="">
+              </div>
+            </div>
+
+            <!-- Security PIN (if active) -->
+            <div class="full-width" id="mobilePinWrapper" style="display: none;">
+              <label style="font-size: 0.8rem; color: var(--accent-amber); font-weight: 600;">🔐 Kode PIN Keamanan Server:</label>
+              <input type="password" id="mobilePin" class="input-custom" placeholder="Masukan 4 digit PIN" style="margin-top: 0.3rem;">
+            </div>
+
+          </div>
+
+          <button type="submit" class="btn-primary" id="submitPrintBtn">🖨️ Print Sekarang</button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- Progress / Status Overlay Modal -->
+  <div class="modal-overlay" id="statusModal">
+    <div class="glass-card modal-card">
+      <div class="spinner" id="modalSpinner"></div>
+      <h3 id="modalTitle" style="font-family: var(--font-heading); font-size: 1.3rem;">Mengirim Dokumen...</h3>
+      <p id="modalMessage" style="color: var(--text-muted); font-size: 0.9rem; margin: 0.75rem 0 1.5rem 0;">Mohon tunggu, dokumen Anda sedang dikirim ke printer server.</p>
+      <button type="button" class="btn-primary" id="modalCloseBtn" style="display: none; width: auto; margin: 0 auto; padding: 0.6rem 1.75rem;" onclick="closeStatusModal()">Selesai / Kirim File Lain</button>
+    </div>
+  </div>
+
+  <!-- Real-time Host Notification Toast Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

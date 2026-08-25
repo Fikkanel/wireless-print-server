@@ -10,6 +10,7 @@ const { WebSocketServer } = require('ws');
 const config = require('./config.json');
 const { getLocalIp } = require('./lib/network');
 const printer = require('./lib/printer');
+const scanner = require('./lib/scanner');
 const { convertToPdf } = require('./lib/convert');
 const jobStore = require('./lib/jobStore');
 
@@ -150,6 +151,59 @@ app.post('/api/settings', express.json(), (req, res) => {
     if (pinCode) config.pin.code = String(pinCode);
   }
   res.json({ ok: true, activePrinter: runtimeActivePrinter });
+});
+
+// ---------- API: daftar scanner terinstall ----------
+app.get('/api/scanners', async (req, res) => {
+  try {
+    const list = await scanner.getInstalledScanners();
+    res.json({ scanners: list });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- API: eksekusi scan nirkabel dari HP ----------
+app.post('/api/scan', checkPin, async (req, res) => {
+  try {
+    const { resolution, colorMode, format, deviceIndex } = req.body || {};
+    console.log(`[Scan Request] DPI:${resolution || 150}, Mode:${colorMode || 'color'}, Format:${format || 'png'}`);
+    
+    // Broadcast status scanning via WS
+    wss.clients.forEach((client) => {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify({ type: 'scan-status', message: 'Scanner sedang memindai dokumen...' }));
+      }
+    });
+
+    const result = await scanner.scanDocument({ resolution, colorMode, format, deviceIndex }, UPLOAD_DIR);
+    const fileUrl = `/api/scan/download/${result.fileName}`;
+
+    // Auto schedule cleanup after 30 minutes for scanned files
+    scheduleCleanupAfter(1800, result.filePath);
+
+    res.json({
+      success: true,
+      message: 'Scan berhasil diselesaikan!',
+      fileName: result.fileName,
+      downloadUrl: fileUrl,
+      previewUrl: fileUrl,
+      details: result
+    });
+  } catch (err) {
+    console.error('[Scan Error]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------- API: download / view hasil scan ----------
+app.get('/api/scan/download/:filename', (req, res) => {
+  const fileName = path.basename(req.params.filename);
+  const filePath = path.join(UPLOAD_DIR, fileName);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send('File hasil scan tidak ditemukan atau sudah kadaluarsa.');
+  }
+  res.sendFile(filePath);
 });
 
 // ---------- API: QR code image (data URL) ----------

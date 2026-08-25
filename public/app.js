@@ -7,6 +7,7 @@ let currentOrientation = 'portrait';
 let currentColorMode = 'color';
 let activeJobId = null;
 let currentPrintMode = 'standard'; // 'standard' | 'photo'
+let currentScanColorMode = 'color'; // 'color' | 'grayscale'
 
 let serverSettings = {
   activePrinter: '',
@@ -1172,4 +1173,134 @@ function playNotificationChime() {
     osc.start();
     osc.stop(ctx.currentTime + 0.35);
   } catch (e) {}
+}
+
+// ---------- SCANNER FEATURE LOGIC ----------
+
+function switchMobileTab(tab) {
+  const printSec = document.getElementById('printSection');
+  const scanSec = document.getElementById('scanSection');
+  const printTabBtn = document.getElementById('modePrintTabBtn');
+  const scanTabBtn = document.getElementById('modeScanTabBtn');
+
+  if (tab === 'scan') {
+    printSec.style.display = 'none';
+    scanSec.style.display = 'block';
+    printTabBtn.classList.remove('active');
+    scanTabBtn.classList.add('active');
+    fetchScanners();
+  } else {
+    scanSec.style.display = 'none';
+    printSec.style.display = 'block';
+    scanTabBtn.classList.remove('active');
+    printTabBtn.classList.add('active');
+  }
+}
+
+async function fetchScanners() {
+  const select = document.getElementById('scannerSelect');
+  if (!select) return;
+  select.replaceChildren();
+
+  const loadingOpt = document.createElement('option');
+  loadingOpt.value = '1';
+  loadingOpt.textContent = '🔍 Mencari scanner terhubung...';
+  select.appendChild(loadingOpt);
+
+  try {
+    const res = await fetch('/api/scanners');
+    const data = await res.json();
+    select.replaceChildren();
+
+    if (data.scanners && data.scanners.length > 0) {
+      data.scanners.forEach((sc, i) => {
+        const opt = document.createElement('option');
+        opt.value = sc.index || (i + 1);
+        opt.textContent = `📷 ${sc.name}`;
+        select.appendChild(opt);
+      });
+    } else {
+      const opt = document.createElement('option');
+      opt.value = '1';
+      opt.textContent = '⚠️ Tidak ada scanner terdeteksi di laptop server';
+      select.appendChild(opt);
+    }
+  } catch (err) {
+    select.replaceChildren();
+    const opt = document.createElement('option');
+    opt.value = '1';
+    opt.textContent = '❌ Gagal memuat daftar scanner';
+    select.appendChild(opt);
+  }
+}
+
+function setScanColorMode(mode) {
+  currentScanColorMode = mode;
+  document.getElementById('scanColorModeColor').classList.toggle('active', mode === 'color');
+  document.getElementById('scanColorModeGray').classList.toggle('active', mode === 'grayscale');
+}
+
+async function submitScanJob(e) {
+  e.preventDefault();
+
+  const resolution = document.getElementById('scanResolution').value;
+  const format = document.getElementById('scanFormat').value;
+  const deviceIndex = document.getElementById('scannerSelect').value;
+  const pin = document.getElementById('mobilePin') ? document.getElementById('mobilePin').value.trim() : '';
+
+  openStatusModal('Memindai Dokumen...', 'Mohon tunggu, scanner sedang mengambil gambar dari flatbed...');
+
+  try {
+    const res = await fetch('/api/scan', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-print-pin': pin
+      },
+      body: JSON.stringify({
+        resolution,
+        colorMode: currentScanColorMode,
+        format,
+        deviceIndex
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      openStatusModal('Gagal Memindai ❌', data.error || 'Terjadi kesalahan saat memindai.');
+      const closeBtn = document.getElementById('modalCloseBtn');
+      closeBtn.style.display = 'block';
+      closeBtn.textContent = 'Tutup';
+      return;
+    }
+
+    closeStatusModal();
+
+    // Show Scan Result Box
+    const resultBox = document.getElementById('scanResultBox');
+    const resultImg = document.getElementById('scanResultImg');
+    const downloadBtn = document.getElementById('scanDownloadBtn');
+    const filenameEl = document.getElementById('scanResultFilename');
+    const metaEl = document.getElementById('scanResultMeta');
+
+    resultImg.src = `${data.previewUrl}?t=${Date.now()}`;
+    downloadBtn.href = data.downloadUrl;
+    downloadBtn.download = data.fileName;
+    filenameEl.textContent = data.fileName;
+    metaEl.textContent = `${data.details.resolution} DPI • ${data.details.colorMode === 'grayscale' ? 'Hitam-Putih' : 'Warna'}`;
+
+    resultBox.style.display = 'block';
+    resultBox.scrollIntoView({ behavior: 'smooth' });
+
+  } catch (err) {
+    openStatusModal('Error Server ❌', err.message || 'Gagal terhubung ke server.');
+    const closeBtn = document.getElementById('modalCloseBtn');
+    closeBtn.style.display = 'block';
+    closeBtn.textContent = 'Tutup';
+  }
+}
+
+function closeScanResult() {
+  document.getElementById('scanResultBox').style.display = 'none';
 }

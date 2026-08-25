@@ -176,10 +176,10 @@ function updateUIWithStatus(data) {
   }
 
   // Printer information
-  if (data.printer && data.printer.printerName) {
+  if (data.printers && data.printers.length > 0) {
+    populatePrintersSelect(data.printers, data.settings ? data.settings.activePrinter : '');
+  } else if (data.printer && data.printer.printerName) {
     const activePName = data.printer.printerName;
-    document.getElementById('mobileConnectedPrinter').textContent = activePName;
-
     const printerSelect = document.getElementById('printerSelect');
     if (printerSelect && printerSelect.options.length <= 1) {
       printerSelect.replaceChildren();
@@ -194,8 +194,6 @@ function updateUIWithStatus(data) {
       mockOpt.textContent = 'Virtual Mock Printer (LocalPrint Test)';
       printerSelect.appendChild(mockOpt);
     }
-  } else if (data.printers) {
-    populatePrintersSelect(data.printers, data.settings ? data.settings.activePrinter : '');
   }
 
   // Mobile Connected Printer
@@ -207,6 +205,8 @@ function updateUIWithStatus(data) {
     if (pinWrap) {
       pinWrap.style.display = data.settings.pinProtection ? 'block' : 'none';
     }
+  } else if (data.printer && data.printer.printerName) {
+    document.getElementById('mobileConnectedPrinter').textContent = data.printer.printerName;
   }
 }
 
@@ -985,6 +985,9 @@ async function submitPrintJob(event) {
   if (pin) {
     formData.append('pin', pin);
   }
+  if (serverSettings.activePrinter) {
+    formData.append('activePrinter', serverSettings.activePrinter);
+  }
 
   // Open Modal Progress Overlay
   openStatusModal('Uploading...', 'Mengunggah file ke printer server lokal...');
@@ -1026,7 +1029,7 @@ function formatUserFriendlyError(rawMsg) {
   const msg = String(rawMsg).toLowerCase();
 
   if (msg.includes('no application is associated') || msg.includes('start-process') || msg.includes('argumentlist') || msg.includes('cannot validate argument')) {
-    return 'Gagal memproses dokumen di Windows. Pastikan printer EPSON Anda dalam keadaan aktif dan terhubung.';
+    return 'Gagal memproses dokumen di Windows. Pastikan printer Anda dalam keadaan aktif dan terhubung.';
   }
   if (msg.includes('eaddrinuse')) {
     return 'Port printer server sedang digunakan oleh aplikasi lain.';

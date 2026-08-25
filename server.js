@@ -13,6 +13,9 @@ const printer = require('./lib/printer');
 const { convertToPdf } = require('./lib/convert');
 const jobStore = require('./lib/jobStore');
 
+// Runtime state: active printer (persisted in memory, set from Host Dashboard)
+let runtimeActivePrinter = null;
+
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -78,15 +81,34 @@ app.get('/api/status', async (req, res) => {
     const url = `http://${HOST_BIND}:${PORT}/`;
     const qrDataUrl = await QRCode.toDataURL(url, { width: 400, margin: 1 });
 
+    // Daftar semua printer terinstall
+    let installedPrinters = [];
+    try {
+      installedPrinters = await printer.getInstalledPrinters();
+    } catch (e) {}
+
+    const defaultPrinter = status.printerName || null;
+    const activePrinter = runtimeActivePrinter || defaultPrinter || 'Default Printer';
+
+    // Build printers array with isDefault flag
+    const printers = installedPrinters.map(name => ({
+      name,
+      isDefault: name === defaultPrinter
+    }));
+
+    // Add Virtual Mock Printer for testing
+    printers.push({ name: 'Virtual Mock Printer (LocalPrint Test)', isDefault: false });
+
     res.json({
       ip: HOST_BIND,
       port: PORT,
       serverUrl: url,
       qrDataUrl,
       printer: status,
+      printers,
       capabilities: caps,
       settings: {
-        activePrinter: status.printerName || 'Default Printer',
+        activePrinter,
         pinProtection: !!(config.pin && config.pin.enabled)
       },
       network: { ip: HOST_BIND, port: PORT, url }
@@ -94,6 +116,40 @@ app.get('/api/status', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ---------- API: daftar semua printer terinstall ----------
+app.get('/api/printers', async (req, res) => {
+  try {
+    const status = await printer.getStatus();
+    const installedPrinters = await printer.getInstalledPrinters();
+    const defaultPrinter = status.printerName || null;
+
+    const printers = installedPrinters.map(name => ({
+      name,
+      isDefault: name === defaultPrinter
+    }));
+    printers.push({ name: 'Virtual Mock Printer (LocalPrint Test)', isDefault: false });
+
+    res.json({ printers, defaultPrinter, activePrinter: runtimeActivePrinter || defaultPrinter });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- API: simpan pengaturan host (printer aktif, PIN) ----------
+app.post('/api/settings', express.json(), (req, res) => {
+  const { activePrinter, pinProtection, pinCode } = req.body || {};
+  if (activePrinter) {
+    runtimeActivePrinter = activePrinter;
+    console.log(`[Settings] Printer target aktif diubah ke: ${activePrinter}`);
+  }
+  if (typeof pinProtection === 'boolean') {
+    config.pin = config.pin || {};
+    config.pin.enabled = pinProtection;
+    if (pinCode) config.pin.code = String(pinCode);
+  }
+  res.json({ ok: true, activePrinter: runtimeActivePrinter });
 });
 
 // ---------- API: QR code image (data URL) ----------
@@ -137,7 +193,7 @@ app.post('/api/print', checkPin, (req, res) => {
       duplex: req.body.duplex === 'true' || req.body.duplex === true,
       copies: Math.max(1, parseInt(req.body.copies, 10) || 1),
       pageRange: req.body.pageRange || 'all',
-      printerName: req.body.activePrinter || (config.printer && config.printer.activePrinter) || config.activePrinter || 'EPSON L3210 Series'
+      printerName: req.body.activePrinter || runtimeActivePrinter || null
     };
 
     const job = jobStore.createJob({ fileName: uploadedFile.originalname, deviceName, options });
